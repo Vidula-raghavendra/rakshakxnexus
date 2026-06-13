@@ -1,8 +1,35 @@
-import { useEffect, useState, memo } from 'react'
+import { useEffect, useState, memo, useCallback } from 'react'
 import { useCityStore } from '../store/cityStore'
 import { motion } from 'framer-motion'
 
 const API_KEY = import.meta.env.VITE_API_KEY ?? ''
+const RAKSHAK_KEY = 'rakshak_2026_a9XkP7mN4vQ2sL8dF5wR1zC6'
+
+function useMuteState() {
+  const [muted, setMuted] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  // Sync from server on mount
+  useEffect(() => {
+    fetch('http://localhost:8001/alerts/status', { headers: { 'X-API-Key': RAKSHAK_KEY } })
+      .then(r => r.json()).then(d => setMuted(d.muted)).catch(() => {})
+  }, [])
+
+  const toggle = useCallback(async () => {
+    setLoading(true)
+    const endpoint = muted ? '/alerts/unmute' : '/alerts/mute'
+    try {
+      await fetch(`http://localhost:8001${endpoint}`, {
+        method: 'POST', headers: { 'X-API-Key': RAKSHAK_KEY },
+      })
+      setMuted(m => !m)
+    } finally {
+      setLoading(false)
+    }
+  }, [muted])
+
+  return { muted, loading, toggle }
+}
 
 const Clock = memo(function Clock() {
   const [clock, setClock] = useState(() => new Date().toLocaleTimeString('en-IN', { hour12: false }))
@@ -24,6 +51,7 @@ export default function StatusBar() {
   const connected   = useCityStore(s => s.connected)
   const decisions   = useCityStore(s => s.decisions)
   const rakshakIncidents = useCityStore(s => s.rakshakIncidents)
+  const { muted, loading, toggle } = useMuteState()
 
   const criticalZones = snapshot
     ? Object.values(snapshot.zones as any).filter((z: any) => z.status === 'critical').length : 0
@@ -137,6 +165,23 @@ export default function StatusBar() {
         padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, textDecoration: 'none',
         background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#16a34a',
       }}>📹 Rakshak ↗</a>
+
+      {/* Alert mute toggle */}
+      <button
+        onClick={toggle}
+        disabled={loading}
+        title={muted ? 'Alerts muted — click to unmute' : 'Alerts active — click to mute calls'}
+        style={{
+          padding: '5px 12px', borderRadius: 8, cursor: loading ? 'wait' : 'pointer',
+          fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5,
+          background: muted ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.7)',
+          border: muted ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(0,0,0,0.08)',
+          color: muted ? '#dc2626' : '#64748b',
+          opacity: loading ? 0.6 : 1,
+          transition: 'all 0.2s',
+        }}>
+        {muted ? '🔕 Calls Muted' : '🔔 Calls On'}
+      </button>
 
       <Clock />
     </div>

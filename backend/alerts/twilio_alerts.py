@@ -66,6 +66,7 @@ ALERT_COOLDOWN = 3600  # 1 hour per incident-type per department
 MAX_CALLS_PER_SESSION = 1  # one call per upload session
 _session_calls_made = 0     # resets when a new video is uploaded
 _session_active = False     # True between upload and stop-all
+_muted = False              # operator-controlled mute from UI
 
 
 def _cooldown_key(incident_type: str, dept: str) -> str:
@@ -88,8 +89,29 @@ def end_session_alerts():
     logger.info("Alert session ended — calls suppressed until next upload")
 
 
+def mute_alerts():
+    """Operator pressed the mute button in the UI — stop all further calls/SMS."""
+    global _muted
+    _muted = True
+    logger.info("Alerts MUTED by operator")
+
+
+def unmute_alerts():
+    """Operator re-enabled calls from the UI."""
+    global _muted
+    _muted = False
+    logger.info("Alerts UNMUTED by operator")
+
+
+def is_muted() -> bool:
+    return _muted
+
+
 def _is_on_cooldown(incident_type: str, dept: str) -> bool:
     global _session_calls_made
+    if _muted:
+        logger.info("Alerts muted by operator — suppressing")
+        return True
     if not _session_active:
         logger.info("No active session — suppressing alert")
         return True
@@ -252,15 +274,17 @@ def _build_action_twiml(decision: dict, dept_name: str) -> str:
 </Response>"""
 
 
-async def dispatch_action_alerts(decision: dict) -> list[dict]:  # type: ignore[return]
-    return []  # DISABLED
-    # noinspection PyUnreachableCode
+async def dispatch_action_alerts(decision: dict) -> list[dict]:
     """
     Called when the governor commits to an action.
-    Calls + SMSes the relevant departments telling them WHAT the AI decided.
+    Calls + SMSes the relevant departments. Subject to same mute/session cap.
     """
-    action_type  = decision.get("action_type", "")
+    action_type = decision.get("action_type", "")
     if action_type in ("no_action", ""):
+        return []
+
+    if _muted:
+        logger.info(f"Action alert muted by operator: {action_type}")
         return []
 
     departments = ACTION_ROUTING.get(action_type, ["police"])
@@ -268,8 +292,8 @@ async def dispatch_action_alerts(decision: dict) -> list[dict]:  # type: ignore[
     results = []
 
     cooldown_key = f"action:{action_type}"
-    if _total_calls_made >= MAX_CALLS_PER_SESSION:
-        logger.info(f"Global call cap reached — suppressing action alert: {action_type}")
+    if _session_calls_made >= MAX_CALLS_PER_SESSION:
+        logger.info(f"Session call cap reached — suppressing action alert: {action_type}")
         return []
     if time.time() - _last_alert.get(cooldown_key, 0) < ALERT_COOLDOWN:
         logger.info(f"Action alert suppressed (cooldown): {action_type}")
@@ -333,13 +357,10 @@ def _send_call_sync(to: str, twiml: str):
 
 # ── Public async interface ────────────────────────────────────────────────────
 
-async def dispatch_alerts(incident: dict) -> list[dict]:  # type: ignore[return]
-    return []  # DISABLED — re-enable by removing these two lines
-    # noinspection PyUnreachableCode
+async def dispatch_alerts(incident: dict) -> list[dict]:
     """
     Send calls + SMS to all relevant departments for this incident.
-    Returns list of alert records (for logging/broadcast).
-    Runs Twilio API calls in thread executor to not block the event loop.
+    One call per session max; operator can mute via UI.
     """
     incident_type = incident.get("incident_type", "")
     departments   = INCIDENT_ROUTING.get(incident_type, [])

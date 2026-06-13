@@ -47,7 +47,10 @@ from security import (
 from ..core.video_processor import VideoProcessor, Detection, CAMERA_REGISTRY
 
 # alerts module lives in backend/ — already on sys.path via the insert at top of this file
-from backend.alerts.twilio_alerts import dispatch_alerts, reset_session_alerts, end_session_alerts
+from backend.alerts.twilio_alerts import (
+    dispatch_alerts, reset_session_alerts, end_session_alerts,
+    mute_alerts, unmute_alerts, is_muted,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("rakshak.server")
@@ -819,6 +822,26 @@ async def rakshak_ui():
 @limiter.limit("60/minute")
 async def health(request: Request):
     return {"status": "ok", "detections_total": len(_detections)}
+
+
+@app.post("/alerts/mute")
+@limiter.limit("30/minute")
+async def mute_alert_calls(request: Request, _auth=Depends(require_api_key)):
+    mute_alerts()
+    return {"status": "muted"}
+
+
+@app.post("/alerts/unmute")
+@limiter.limit("30/minute")
+async def unmute_alert_calls(request: Request, _auth=Depends(require_api_key)):
+    unmute_alerts()
+    return {"status": "unmuted"}
+
+
+@app.get("/alerts/status")
+@limiter.limit("60/minute")
+async def alert_status(request: Request, _auth=Depends(require_api_key)):
+    return {"muted": is_muted()}
 
 
 @app.get("/detections")

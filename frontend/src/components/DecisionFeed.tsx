@@ -447,28 +447,54 @@ const Logo = () => (
   </svg>
 )
 
-// ─── section divider ──────────────────────────────────────────────────────────
+// ─── tab bar ──────────────────────────────────────────────────────────────────
 
-function Section({ label, count, children, extra }: {
-  label: string; count?: number; children: React.ReactNode; extra?: React.ReactNode
+type Tab = 'detections' | 'pending' | 'decisions'
+
+function TabBar({ active, setActive, counts }: {
+  active: Tab
+  setActive: (t: Tab) => void
+  counts: { detections: number; pending: number; decisions: number }
 }) {
+  const tabs: { id: Tab; label: string; urgentColor?: string }[] = [
+    { id: 'detections', label: 'Detections', urgentColor: counts.detections > 0 ? '#ef4444' : undefined },
+    { id: 'pending',    label: 'Pending',    urgentColor: counts.pending    > 0 ? '#eab308' : undefined },
+    { id: 'decisions',  label: 'Decisions' },
+  ]
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.7 }}>
-          {label}
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {extra}
-          {count !== undefined && (
-            <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 10, fontWeight: 600,
-              background: 'rgba(59,130,246,0.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
-              {count}
-            </span>
-          )}
-        </div>
-      </div>
-      {children}
+    <div style={{
+      display: 'flex', gap: 2, padding: '6px 12px 0', flexShrink: 0,
+      borderBottom: '1px solid rgba(0,0,0,0.05)',
+    }}>
+      {tabs.map(t => {
+        const isActive = t.id === active
+        const count = counts[t.id]
+        return (
+          <button key={t.id} onClick={() => setActive(t.id)} style={{
+            flex: 1, padding: '7px 4px 8px', border: 'none', cursor: 'pointer',
+            fontSize: 10, fontWeight: isActive ? 700 : 500,
+            color: isActive ? '#1e293b' : '#94a3b8',
+            background: 'transparent',
+            borderBottom: isActive ? '2px solid #3b82f6' : '2px solid transparent',
+            transition: 'all 0.15s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+          }}>
+            {t.label}
+            {count > 0 && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, minWidth: 16, height: 16,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 8, padding: '0 4px',
+                background: t.urgentColor
+                  ? `${t.urgentColor}20`
+                  : isActive ? 'rgba(59,130,246,0.12)' : 'rgba(0,0,0,0.06)',
+                color: t.urgentColor ?? (isActive ? '#3b82f6' : '#94a3b8'),
+                border: t.urgentColor ? `1px solid ${t.urgentColor}40` : 'none',
+              }}>{count}</span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -482,19 +508,30 @@ export default function DecisionFeed() {
   const dismissAlert     = useCityStore(s => s.dismissAlert)
   const mapAlerts        = useCityStore(s => s.mapAlerts)
 
-  // Show only last 5 minutes of incidents
+  const [activeTab, setActiveTab] = useState<Tab>('detections')
+
+  // Auto-switch tab when urgent data arrives
+  useEffect(() => {
+    if (pendingApprovals.length > 0 && activeTab === 'decisions') setActiveTab('pending')
+  }, [pendingApprovals.length])
+
   const activeIncidents = useMemo(
     () => rakshakIncidents.filter(i => Date.now() / 1000 - i.timestamp < 300),
     [rakshakIncidents]
   )
 
-  // Decisions split: pending first, then last 5 completed (not pending)
+  // Auto-switch to detections when a new one arrives
+  const prevIncidentCount = useRef(0)
+  useEffect(() => {
+    if (activeIncidents.length > prevIncidentCount.current) setActiveTab('detections')
+    prevIncidentCount.current = activeIncidents.length
+  }, [activeIncidents.length])
+
   const completed = useMemo(
-    () => decisions.filter(d => d.status !== 'pending_approval').slice(0, 5),
+    () => decisions.filter(d => d.status !== 'pending_approval').slice(0, 12),
     [decisions]
   )
 
-  // Approve/reject wired to backend
   const handleApprove = async (id: string) => {
     await fetch('/api/approve', {
       method: 'POST',
@@ -509,27 +546,27 @@ export default function DecisionFeed() {
       body: JSON.stringify({ decision_id: id, approved: false }),
     })
   }
-
-  // Resolve dismisses the map alert for that camera
   const handleResolve = (cameraId: string) => {
     mapAlerts.forEach(a => {
       if ((a.details?.camera as string) === cameraId) dismissAlert(a.id)
     })
   }
-
-  // Bulk approve all pending
   const approveAll = async () => {
     await Promise.all(pendingApprovals.map(d => handleApprove(d.id)))
   }
 
-  const isEmpty = activeIncidents.length === 0 && pendingApprovals.length === 0 && completed.length === 0
+  const counts = {
+    detections: activeIncidents.length,
+    pending: pendingApprovals.length,
+    decisions: completed.length,
+  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
       <div style={{
-        padding: '11px 14px 10px', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0,
+        padding: '10px 14px 8px', flexShrink: 0,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div>
@@ -539,73 +576,91 @@ export default function DecisionFeed() {
         <Logo />
       </div>
 
-      {/* Scrollable body */}
+      {/* Tab bar */}
+      <TabBar active={activeTab} setActive={setActiveTab} counts={counts} />
+
+      {/* Tab content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
+        <AnimatePresence mode="wait">
 
-        {/* CCTV Detections */}
-        {activeIncidents.length > 0 && (
-          <Section label="CCTV Detections" count={activeIncidents.length}>
-            <AnimatePresence>
-              {activeIncidents.slice(0, 4).map((inc, i) => (
-                <motion.div key={`${inc.camera_id}_${inc.timestamp}_${i}`}
-                  initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                  <IncidentCard inc={inc} onResolve={() => handleResolve(inc.camera_id)} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            {activeIncidents.length > 4 && (
-              <div style={{ fontSize: 10, color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>
-                +{activeIncidents.length - 4} more incidents
-              </div>
-            )}
-          </Section>
-        )}
+          {/* ── Detections tab ── */}
+          {activeTab === 'detections' && (
+            <motion.div key="detections"
+              initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 6 }} transition={{ duration: 0.12 }}>
+              {activeIncidents.length === 0 ? (
+                <EmptyState label="No active detections" sub="Upload a video in Rakshak to begin" />
+              ) : (
+                <AnimatePresence>
+                  {activeIncidents.map((inc, i) => (
+                    <motion.div key={`${inc.camera_id}_${inc.timestamp}_${i}`}
+                      initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                      <IncidentCard inc={inc} onResolve={() => handleResolve(inc.camera_id)} />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              )}
+            </motion.div>
+          )}
 
-        {/* Pending approvals */}
-        {pendingApprovals.length > 0 && (
-          <Section label="Awaiting Approval" count={pendingApprovals.length} extra={
-            pendingApprovals.length > 1
-              ? <button onClick={approveAll} style={{
-                  fontSize: 9, padding: '2px 8px', borderRadius: 6, cursor: 'pointer', fontWeight: 600,
-                  background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#16a34a',
-                }}>Approve all</button>
-              : undefined
-          }>
-            <AnimatePresence>
-              {pendingApprovals.slice(0, 8).map(d => (
-                <DecisionRow key={d.id} d={d}
-                  onApprove={() => handleApprove(d.id)}
-                  onReject={() => handleReject(d.id)} />
-              ))}
-            </AnimatePresence>
-            {pendingApprovals.length > 8 && (
-              <div style={{ fontSize: 10, color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>
-                +{pendingApprovals.length - 8} more pending
-              </div>
-            )}
-          </Section>
-        )}
+          {/* ── Pending tab ── */}
+          {activeTab === 'pending' && (
+            <motion.div key="pending"
+              initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 6 }} transition={{ duration: 0.12 }}>
+              {pendingApprovals.length === 0 ? (
+                <EmptyState label="No pending approvals" sub="AI decisions will appear here" />
+              ) : (
+                <>
+                  {pendingApprovals.length > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                      <button onClick={approveAll} style={{
+                        fontSize: 10, padding: '4px 10px', borderRadius: 7, cursor: 'pointer', fontWeight: 600,
+                        background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#16a34a',
+                      }}>✓ Approve all ({pendingApprovals.length})</button>
+                    </div>
+                  )}
+                  <AnimatePresence>
+                    {pendingApprovals.map(d => (
+                      <DecisionRow key={d.id} d={d}
+                        onApprove={() => handleApprove(d.id)}
+                        onReject={() => handleReject(d.id)} />
+                    ))}
+                  </AnimatePresence>
+                </>
+              )}
+            </motion.div>
+          )}
 
-        {/* Recent decisions */}
-        {completed.length > 0 && (
-          <Section label="Recent Decisions">
-            <AnimatePresence>
-              {completed.map(d => <DecisionRow key={d.id} d={d} />)}
-            </AnimatePresence>
-          </Section>
-        )}
+          {/* ── Decisions tab ── */}
+          {activeTab === 'decisions' && (
+            <motion.div key="decisions"
+              initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 6 }} transition={{ duration: 0.12 }}>
+              {completed.length === 0 ? (
+                <EmptyState label="No decisions yet" sub="AI governor activity will appear here" />
+              ) : (
+                <AnimatePresence>
+                  {completed.map(d => <DecisionRow key={d.id} d={d} />)}
+                </AnimatePresence>
+              )}
+            </motion.div>
+          )}
 
-        {/* Empty state */}
-        {isEmpty && (
-          <div style={{ textAlign: 'center', marginTop: 48 }}>
-            <div style={{ display: 'flex', justifyContent: 'center', opacity: 0.2, marginBottom: 10 }}>
-              <Logo />
-            </div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>Monitoring city in real time</div>
-            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>No active incidents</div>
-          </div>
-        )}
+        </AnimatePresence>
       </div>
+    </div>
+  )
+}
+
+function EmptyState({ label, sub }: { label: string; sub: string }) {
+  return (
+    <div style={{ textAlign: 'center', marginTop: 44 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', opacity: 0.18, marginBottom: 10 }}>
+        <Logo />
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 500, color: '#64748b' }}>{label}</div>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>{sub}</div>
     </div>
   )
 }
