@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "pre-mortem": {
+      "source": "boshu2/agentops",
+      "sourceType": "github",
+      "skillPath": "skills/pre-mortem/SKILL.md",
+      "computedHash": "749a4e30f4a4b0cc3506f69cbb62d780b6228ff29ca2fc671a7e240bfdd40ca6"
+    }
+  }
+}
