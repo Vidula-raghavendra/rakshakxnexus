@@ -63,7 +63,7 @@ INCIDENT_ROUTING: dict[str, list[str]] = {
 
 _last_alert: dict[str, float] = {}  # key: "incident_type:department"
 ALERT_COOLDOWN = 3600  # 1 hour per incident-type per department
-MAX_CALLS_PER_SESSION = 10  # max calls per upload session
+MAX_CALLS_PER_SESSION = 1  # one call per upload session
 _session_calls_made = 0     # resets when a new video is uploaded
 _session_active = False     # True between upload and stop-all
 _muted = False              # operator-controlled mute from UI
@@ -375,7 +375,7 @@ def _send_call_sync(to: str, twiml: str):
 
 # ── Public async interface ────────────────────────────────────────────────────
 
-async def dispatch_alerts(incident: dict) -> list[dict]:
+async def dispatch_alerts(incident: dict, bypass_cap: bool = False) -> list[dict]:
     """
     Send calls + SMS to all relevant departments for this incident.
     One call per session max; operator can mute via UI.
@@ -391,7 +391,7 @@ async def dispatch_alerts(incident: dict) -> list[dict]:
     results = []
 
     for dept_key in departments:
-        if _is_on_cooldown(incident_type, dept_key):
+        if not bypass_cap and _is_on_cooldown(incident_type, dept_key):
             logger.info(f"Alert suppressed (cooldown): {incident_type} → {dept_key}")
             continue
 

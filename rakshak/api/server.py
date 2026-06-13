@@ -882,7 +882,7 @@ async def manual_dispatch(request: Request, req: DispatchRequest, _auth=Depends(
         "lng": req.lng,
         "zone_id": req.zone_id,
     }
-    results = await dispatch_alerts(incident)
+    results = await dispatch_alerts(incident, bypass_cap=True)
     return {"dispatched": results, "count": len(results)}
 
 
