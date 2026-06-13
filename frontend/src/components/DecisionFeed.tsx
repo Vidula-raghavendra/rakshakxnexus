@@ -3,6 +3,7 @@ import { useCityStore, Decision } from '../store/cityStore'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const API_KEY = import.meta.env.VITE_API_KEY ?? ''
+const RAKSHAK_KEY = 'rakshak_2026_a9XkP7mN4vQ2sL8dF5wR1zC6'
 
 const SEV_COLOR: Record<string, string> = { critical:'#ef4444', high:'#f97316', medium:'#3b82f6', low:'#94a3b8' }
 const SEV_BG:   Record<string, string> = {
@@ -212,11 +213,37 @@ function useWordStream(scriptRef: React.RefObject<Script>) {
 
 // ─── incident card ────────────────────────────────────────────────────────────
 
+async function triggerCall(inc: any): Promise<string> {
+  try {
+    const res = await fetch('http://localhost:8001/alerts/dispatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': RAKSHAK_KEY },
+      body: JSON.stringify({
+        incident_type: inc.incident_type,
+        severity: inc.severity || 'high',
+        description: inc.description || '',
+        camera_id: inc.camera_id || '',
+        confidence: inc.confidence || 0.85,
+        lat: inc.lat || 17.39,
+        lng: inc.lng || 78.46,
+        zone_id: inc.zone_id || '',
+      }),
+    })
+    const data = await res.json()
+    if (data.count > 0) return 'calling'
+    const reasons = data.dispatched?.map((d: any) => d.reason || d.status).join(', ')
+    return reasons || 'suppressed'
+  } catch {
+    return 'error'
+  }
+}
+
 function IncidentCard({ inc, onResolve }: { inc: any; onResolve: () => void }) {
   // Freeze the script on mount — never recompute it mid-stream
   const scriptRef = useRef<Script>(matchScript(inc.description || '', inc.incident_type || ''))
 
   const [phase, setPhase] = useState<'idle' | 'deliberating' | 'concluded'>('idle')
+  const [callState, setCallState] = useState<'idle' | 'calling' | 'done' | 'suppressed'>('idle')
   const { visibleLines, currentLine, done, start } = useWordStream(scriptRef)
 
   const col   = SEV_COLOR[inc.severity] || '#94a3b8'
@@ -237,6 +264,13 @@ function IncidentCard({ inc, onResolve }: { inc: any; onResolve: () => void }) {
     e.stopPropagation()
     setPhase('deliberating')
     start()
+  }
+
+  const handleCall = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setCallState('calling')
+    const result = await triggerCall(inc)
+    setCallState(result === 'calling' ? 'done' : 'suppressed')
   }
 
   const script = scriptRef.current
@@ -364,6 +398,19 @@ function IncidentCard({ inc, onResolve }: { inc: any; onResolve: () => void }) {
             background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(0,0,0,0.06)', color: '#94a3b8',
           }}>Re-analyse</button>
         )}
+        <button onClick={handleCall} disabled={callState === 'calling'} style={{
+          padding: '6px 10px', borderRadius: 8, cursor: callState === 'calling' ? 'wait' : 'pointer',
+          fontSize: 10, fontWeight: 600, border: 'none', flexShrink: 0,
+          background: callState === 'done'
+            ? 'rgba(34,197,94,0.12)' : callState === 'suppressed'
+            ? 'rgba(148,163,184,0.12)' : 'rgba(239,68,68,0.1)',
+          color: callState === 'done' ? '#16a34a' : callState === 'suppressed' ? '#94a3b8' : '#dc2626',
+          border: callState === 'done'
+            ? '1px solid rgba(34,197,94,0.25)' : callState === 'suppressed'
+            ? '1px solid rgba(148,163,184,0.2)' : '1px solid rgba(239,68,68,0.22)',
+        }}>
+          {callState === 'calling' ? '📞...' : callState === 'done' ? '✓ Called' : callState === 'suppressed' ? '🔕 Muted' : '📞 Call'}
+        </button>
         <button onClick={onResolve} style={{
           flex: 1, padding: '6px 0', borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600,
           background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.22)', color: '#16a34a',

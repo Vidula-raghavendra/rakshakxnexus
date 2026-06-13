@@ -63,7 +63,7 @@ INCIDENT_ROUTING: dict[str, list[str]] = {
 
 _last_alert: dict[str, float] = {}  # key: "incident_type:department"
 ALERT_COOLDOWN = 3600  # 1 hour per incident-type per department
-MAX_CALLS_PER_SESSION = 1  # one call per upload session
+MAX_CALLS_PER_SESSION = 10  # max calls per upload session
 _session_calls_made = 0     # resets when a new video is uploaded
 _session_active = False     # True between upload and stop-all
 _muted = False              # operator-controlled mute from UI
@@ -181,24 +181,42 @@ def _build_sms(incident: dict, dept_name: str) -> str:
     return "\n".join(lines)
 
 
-def _build_twiml(incident: dict, dept_name: str) -> str:
-    """TwiML spoken when the call is answered."""
+def _build_twiml(incident: dict, dept_name: str, dept_key: str = "") -> str:
+    """TwiML spoken when the call is answered. Message differs per department."""
     itype    = incident.get("incident_type", "incident").replace("_", " ")
     severity = incident.get("severity", "high")
     zone     = (incident.get("zone_id") or "unknown zone").replace("_", " ")
-    camera   = incident.get("camera_id", "unknown camera")
+    camera   = incident.get("camera_id", "unknown").replace("cam_", "").upper().replace("_", "-")
     conf     = int(incident.get("confidence", 0.8) * 100)
 
-    message = (
-        f"This is an automated alert from Rakshak, Hyderabad CCTV Incident Intelligence System. "
-        f"A {severity} severity {itype} has been detected by camera {camera} "
-        f"in the {zone} area. "
-        f"Detection confidence is {conf} percent. "
-        f"Immediate response is requested. "
-        f"This message will repeat. "
-        f"A text message with location details has also been sent."
-    )
-    # Repeat twice
+    if dept_key == "ambulance":
+        message = (
+            f"This is Rakshak, Hyderabad CCTV Emergency Alert. "
+            f"A {itype} has been detected in the {zone} area, camera {camera}. "
+            f"There may be injured passengers at the scene. "
+            f"Please dispatch an ambulance immediately. "
+            f"Severity is {severity}. Detection confidence {conf} percent. "
+            f"This message will repeat."
+        )
+    elif dept_key == "police":
+        message = (
+            f"This is Rakshak, Hyderabad CCTV Emergency Alert. "
+            f"A {itype} has been detected in the {zone} area, camera {camera}. "
+            f"A tow truck and traffic officers are needed at the scene. "
+            f"Please respond immediately and arrange vehicle recovery. "
+            f"Severity is {severity}. Detection confidence {conf} percent. "
+            f"This message will repeat."
+        )
+    else:
+        message = (
+            f"This is Rakshak, Hyderabad CCTV Emergency Alert. "
+            f"A {severity} severity {itype} has been detected by camera {camera} "
+            f"in the {zone} area. "
+            f"Immediate response is requested from {dept_name}. "
+            f"Detection confidence {conf} percent. "
+            f"This message will repeat."
+        )
+
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice" language="en-IN">{message}</Say>
@@ -249,7 +267,7 @@ def _build_action_sms(decision: dict, dept_name: str) -> str:
     return "\n".join(l for l in lines if l)
 
 
-def _build_action_twiml(decision: dict, dept_name: str) -> str:
+def _build_action_twiml(decision: dict, dept_name: str, dept_key: str = "") -> str:
     action      = ACTION_READABLE.get(decision.get("action_type", ""), decision.get("action_type", "take action").replace("_", " "))
     human       = decision.get("human_readable", "")
     conf        = int(decision.get("confidence", 0.8) * 100)
@@ -308,7 +326,7 @@ async def dispatch_action_alerts(decision: dict) -> list[dict]:
 
         dept_name  = DEPARTMENTS[dept_key]["name"]
         sms_body   = _build_action_sms(decision, dept_name)
-        twiml      = _build_action_twiml(decision, dept_name)
+        twiml      = _build_action_twiml(decision, dept_name, dept_key)
         result     = {"dept": dept_key, "dept_name": dept_name, "to": to_number}
 
         try:
@@ -389,29 +407,28 @@ async def dispatch_alerts(incident: dict) -> list[dict]:
 
         dept_name = DEPARTMENTS[dept_key]["name"]
         sms_body  = _build_sms(incident, dept_name)
-        twiml     = _build_twiml(incident, dept_name)
+        twiml     = _build_twiml(incident, dept_name, dept_key)
 
-        sms_result  = {"dept": dept_key, "dept_name": dept_name, "to": to_number}
-        call_result = {"dept": dept_key, "dept_name": dept_name, "to": to_number}
+        result = {"dept": dept_key, "dept_name": dept_name, "to": to_number}
 
-        # Send SMS
+        # SMS — skip silently if it fails (India DLT filtering blocks trial SMS)
         try:
             await loop.run_in_executor(None, _send_sms_sync, to_number, sms_body)
-            sms_result["sms"] = "sent"
+            result["sms"] = "sent"
         except Exception as e:
-            logger.error(f"SMS failed to {dept_key} ({to_number}): {e}")
-            sms_result["sms"] = f"failed: {e}"
+            logger.warning(f"SMS skipped for {dept_key}: {e}")
+            result["sms"] = "skipped"
 
-        # Make call
+        # Make call — this is the primary alert mechanism
         try:
             await loop.run_in_executor(None, _send_call_sync, to_number, twiml)
-            call_result["call"] = "initiated"
+            result["call"] = "initiated"
         except Exception as e:
             logger.error(f"Call failed to {dept_key} ({to_number}): {e}")
-            call_result["call"] = f"failed: {e}"
+            result["call"] = f"failed: {e}"
 
         _mark_sent(incident_type, dept_key)
-        results.append({**sms_result, **call_result})
+        results.append(result)
         logger.info(f"Alerted {dept_key} ({to_number}) for {incident_type}")
 
     return results

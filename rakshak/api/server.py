@@ -844,6 +844,48 @@ async def alert_status(request: Request, _auth=Depends(require_api_key)):
     return {"muted": is_muted()}
 
 
+class DispatchRequest(BaseModel):
+    incident_type: str
+    severity: str = "high"
+    description: str = ""
+    camera_id: str = ""
+    confidence: float = 0.85
+    lat: float = 17.3900
+    lng: float = 78.4600
+    zone_id: str = ""
+
+    @field_validator("incident_type")
+    @classmethod
+    def valid_type(cls, v):
+        allowed = set(CAMERA_REGISTRY.keys()) | {
+            "road_accident", "road_flood", "vehicle_stranded", "crowd_surge",
+            "road_blocked", "women_safety", "fight_violence", "traffic_signal_issue",
+            "animal_on_road", "garbage_dumping", "abandoned_object", "building_damage",
+        }
+        # incident_type not camera_id — just accept any non-empty string under 60 chars
+        if not v or len(v) > 60:
+            raise ValueError("Invalid incident_type")
+        return v
+
+
+@app.post("/alerts/dispatch")
+@limiter.limit("10/minute")
+async def manual_dispatch(request: Request, req: DispatchRequest, _auth=Depends(require_api_key)):
+    """Manually trigger a Twilio call + SMS for a specific incident (operator button)."""
+    incident = {
+        "incident_type": req.incident_type,
+        "severity": req.severity,
+        "description": req.description,
+        "camera_id": req.camera_id,
+        "confidence": req.confidence,
+        "lat": req.lat,
+        "lng": req.lng,
+        "zone_id": req.zone_id,
+    }
+    results = await dispatch_alerts(incident)
+    return {"dispatched": results, "count": len(results)}
+
+
 @app.get("/detections")
 @limiter.limit("120/minute")
 async def get_detections(request: Request, since: float = 0.0, limit: int = 50,
