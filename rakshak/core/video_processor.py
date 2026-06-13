@@ -90,8 +90,7 @@ class VideoProcessor:
         self._classifier = IncidentClassifier(frame_history=8)
         self._running = False
         self._frame_count = 0
-        self._last_detection_times: dict = {}  # per incident_type cooldown
-        self._detection_cooldown = 2.0
+        self._fired_types: set = set()  # incident types already fired this session — never repeat
 
         # Frame save directory
         self._frame_dir = Path(__file__).parent.parent / "frames" / camera_id
@@ -198,9 +197,8 @@ class VideoProcessor:
 
             if incident.incident_type != "none" and incident.confidence >= self.min_confidence:
                 now = time.time()
-                last = self._last_detection_times.get(incident.incident_type, 0.0)
-                if now - last >= self._detection_cooldown:
-                    self._last_detection_times[incident.incident_type] = now
+                if incident.incident_type not in self._fired_types:
+                    self._fired_types.add(incident.incident_type)
                     frame_path = None
                     if self.save_frames:
                         frame_path = str(self._frame_dir / f"frame_{count:06d}.jpg")

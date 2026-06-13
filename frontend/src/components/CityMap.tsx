@@ -153,7 +153,7 @@ function LiveCctvStrip() {
     const intervals: Record<string, ReturnType<typeof setInterval>> = {}
     CCTV_CAMS.forEach(cam => {
       const poll = () => {
-        const src = `/frames/${cam.id}/latest.jpg?t=${Date.now()}`
+        const src = `http://localhost:8001/frames/${cam.id}/latest.jpg?t=${Date.now()}`
         const img = new Image()
         img.onload = () => { if (alive) setFeeds(f => ({ ...f, [cam.id]: src })) }
         img.src = src
