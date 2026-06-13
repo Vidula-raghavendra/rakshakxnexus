@@ -1,264 +1,144 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, memo } from 'react'
 import { useCityStore } from '../store/cityStore'
 import { motion } from 'framer-motion'
 
-export default function StatusBar() {
-  const snapshot = useCityStore(s => s.snapshot)
-  const connected = useCityStore(s => s.connected)
-  const scenario = useCityStore(s => s.scenario)
-  const decisions = useCityStore(s => s.decisions)
-  const rulesMode = useCityStore(s => s.rulesMode)
-  const rulesEngineResult = useCityStore(s => s.rulesEngineResult)
-  const [redTeamLoading, setRedTeamLoading] = useState(false)
-  const [redTeamFired, setRedTeamFiredLocal] = useState(false)
-  const [clock, setClock] = useState('')
+const API_KEY = import.meta.env.VITE_API_KEY ?? ''
 
+const Clock = memo(function Clock() {
+  const [clock, setClock] = useState(() => new Date().toLocaleTimeString('en-IN', { hour12: false }))
   useEffect(() => {
-    const tick = () => setClock(new Date().toLocaleTimeString('en-IN', { hour12: false }))
-    tick()
-    const id = setInterval(tick, 1000)
+    const id = setInterval(() => setClock(new Date().toLocaleTimeString('en-IN', { hour12: false })), 1000)
     return () => clearInterval(id)
   }, [])
+  return (
+    <div style={{
+      padding: '5px 12px', borderRadius: 8,
+      background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(0,0,0,0.06)',
+      fontSize: 12, fontWeight: 600, color: '#475569', letterSpacing: 1, minWidth: 70, textAlign: 'center',
+    }}>{clock}</div>
+  )
+})
+
+export default function StatusBar() {
+  const snapshot    = useCityStore(s => s.snapshot)
+  const connected   = useCityStore(s => s.connected)
+  const decisions   = useCityStore(s => s.decisions)
+  const rakshakIncidents = useCityStore(s => s.rakshakIncidents)
 
   const criticalZones = snapshot
-    ? Object.values(snapshot.zones as any).filter((z: any) => z.status === 'critical').length
-    : 0
-  const warningZones = snapshot
-    ? Object.values(snapshot.zones as any).filter((z: any) => z.status === 'warning').length
-    : 0
-  const powerOutages = snapshot
-    ? Object.values(snapshot.hospitals as any).filter((h: any) => !h.has_power).length
-    : 0
+    ? Object.values(snapshot.zones as any).filter((z: any) => z.status === 'critical').length : 0
+  const activeIncidents = rakshakIncidents.filter(i => Date.now() / 1000 - i.timestamp < 300).length
   const pendingDecisions = decisions.filter(d => d.status === 'pending_approval').length
-  const autoExecuted = decisions.filter(d => d.status === 'auto_executed').length
-
-  const isFlood = scenario === 'flood_sept2024'
-
-  // Threat level
-  const threatLevel = criticalZones > 2 ? 'CRITICAL'
-    : criticalZones > 0 || powerOutages > 0 ? 'HIGH'
-    : warningZones > 0 ? 'ELEVATED'
-    : 'NOMINAL'
-  const threatColor = threatLevel === 'CRITICAL' ? '#ef4444'
-    : threatLevel === 'HIGH' ? '#f97316'
-    : threatLevel === 'ELEVATED' ? '#eab308'
-    : '#22c55e'
 
   const handleScenario = async (sc: string) => {
     await fetch('/api/scenario', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
       body: JSON.stringify({ scenario: sc }),
-    })
-  }
-
-  const handleRedTeam = async () => {
-    setRedTeamLoading(true)
-    await fetch('/api/redteam', { method: 'POST' })
-    setRedTeamLoading(false)
-    setRedTeamFiredLocal(true)
-    setTimeout(() => setRedTeamFiredLocal(false), 8000)
-  }
-
-  const handleRulesToggle = async () => {
-    await fetch('/api/rules-mode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: !rulesMode }),
     })
   }
 
   return (
     <div style={{
-      height: 44,
-      background: '#020617',
-      borderBottom: `2px solid ${isFlood ? '#7f1d1d' : '#0f172a'}`,
-      display: 'flex', alignItems: 'center', padding: '0 14px', gap: 12,
-      fontFamily: 'monospace', fontSize: 11, flexShrink: 0,
-      transition: 'border-color 0.5s',
+      height: 52,
+      background: 'rgba(255,255,255,0.7)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      borderBottom: '1px solid rgba(255,255,255,0.9)',
+      boxShadow: '0 1px 12px rgba(100,130,200,0.08)',
+      display: 'flex', alignItems: 'center', padding: '0 18px', gap: 14,
+      flexShrink: 0, zIndex: 10,
     }}>
 
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ color: '#3b82f6', fontWeight: 900, fontSize: 15, letterSpacing: 3 }}>NEXUS</span>
-        <span style={{ color: '#1e293b', fontSize: 8, letterSpacing: 2, textTransform: 'uppercase' }}>City Governor</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <svg width="32" height="32" viewBox="0 0 200 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M100 8L180 45V110C180 155 145 192 100 210C55 192 20 155 20 110V45L100 8Z" fill="none" stroke="#b8a577" strokeWidth="8" strokeLinejoin="round"/>
+          <ellipse cx="100" cy="52" rx="16" ry="11" fill="none" stroke="#b8a577" strokeWidth="5"/>
+          <circle cx="100" cy="52" r="5" fill="#b8a577"/>
+          <rect x="72" y="90" width="56" height="48" rx="4" fill="none" stroke="#b8a577" strokeWidth="4"/>
+          <rect x="84" y="90" width="8" height="30" fill="none" stroke="#b8a577" strokeWidth="4"/>
+          <rect x="108" y="90" width="8" height="30" fill="none" stroke="#b8a577" strokeWidth="4"/>
+          <path d="M72 138 Q100 148 128 138" stroke="#b8a577" strokeWidth="4" fill="none"/>
+          <path d="M65 160 Q100 178 135 160" stroke="#b8a577" strokeWidth="5" fill="none"/>
+          <path d="M72 172 L128 172" stroke="#4a4035" strokeWidth="10" strokeLinecap="round"/>
+          <path d="M76 172 Q100 158 124 172" fill="#4a4035"/>
+          <line x1="100" y1="162" x2="100" y2="172" stroke="white" strokeWidth="3" strokeDasharray="3 3"/>
+        </svg>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', letterSpacing: 0.5 }}>Rakshak</div>
+          <div style={{ fontSize: 9, color: '#94a3b8', letterSpacing: 0.5 }}>AI-Powered Command & Control</div>
+        </div>
       </div>
 
-      {/* Divider */}
-      <div style={{ width: 1, height: 20, background: '#0f172a' }} />
+      <div style={{ width: 1, height: 28, background: 'rgba(0,0,0,0.06)' }} />
 
-      {/* Connection */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      {/* Live status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <motion.div
           animate={{ opacity: connected ? [1, 0.3, 1] : 1 }}
           transition={{ repeat: Infinity, duration: 1.5 }}
-          style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? '#22c55e' : '#ef4444' }}
+          style={{ width: 7, height: 7, borderRadius: '50%', background: connected ? '#22c55e' : '#ef4444' }}
         />
-        <span style={{ fontSize: 9, color: connected ? '#22c55e' : '#ef4444', letterSpacing: 1 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: connected ? '#16a34a' : '#dc2626' }}>
           {connected ? 'LIVE' : 'OFFLINE'}
         </span>
       </div>
 
-      {/* Tick */}
-      {snapshot && (
-        <span style={{ color: '#1e293b', fontSize: 9 }}>T{snapshot.tick}</span>
-      )}
-
-      {/* Threat level */}
-      <motion.div
-        animate={threatLevel === 'CRITICAL' ? { opacity: [1, 0.6, 1] } : {}}
-        transition={{ repeat: Infinity, duration: 1 }}
-        style={{
-          padding: '2px 8px', borderRadius: 3,
-          background: `${threatColor}18`,
-          border: `1px solid ${threatColor}44`,
-          color: threatColor,
-          fontSize: 9, fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase',
-        }}
-      >
-        ◈ {threatLevel}
-      </motion.div>
-
-      {/* Scenario badge */}
-      <div style={{
-        padding: '2px 8px', borderRadius: 3,
-        background: isFlood ? '#7f1d1d' : '#0f172a',
-        border: `1px solid ${isFlood ? '#ef4444' : '#1e293b'}`,
-        color: isFlood ? '#fca5a5' : '#334155',
-        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1,
-      }}>
-        {isFlood ? '🌊 SEPT 2024 FLOOD' : '● NORMAL OPS'}
-      </div>
-
-      {/* Alerts */}
-      {criticalZones > 0 && (
-        <motion.div
-          animate={{ scale: [1, 1.04, 1] }}
-          transition={{ repeat: Infinity, duration: 1 }}
+      {/* Stat chips */}
+      {activeIncidents > 0 && (
+        <motion.div animate={{ scale: [1, 1.03, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}
           style={{
-            padding: '2px 8px', borderRadius: 3,
-            background: '#7f1d1d', border: '1px solid #ef4444',
-            color: '#fca5a5', fontSize: 9, fontWeight: 700,
-          }}
-        >
-          ⚠ {criticalZones} CRITICAL
+            padding: '4px 10px', borderRadius: 20,
+            background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
+            fontSize: 11, fontWeight: 600, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+          <span>⚠</span> {activeIncidents} Active Incident{activeIncidents > 1 ? 's' : ''}
         </motion.div>
       )}
 
-      {powerOutages > 0 && (
+      {criticalZones > 0 && (
         <div style={{
-          padding: '2px 8px', borderRadius: 3,
-          background: '#431407', border: '1px solid #f97316',
-          color: '#fed7aa', fontSize: 9, fontWeight: 700,
+          padding: '4px 10px', borderRadius: 20,
+          background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.25)',
+          fontSize: 11, fontWeight: 600, color: '#ea580c',
         }}>
-          ⚡ {powerOutages} NO POWER
+          🔴 {criticalZones} Critical Zone{criticalZones > 1 ? 's' : ''}
         </div>
       )}
 
       {pendingDecisions > 0 && (
-        <motion.div
-          animate={{ opacity: [1, 0.5, 1] }}
-          transition={{ repeat: Infinity, duration: 0.8 }}
+        <motion.div animate={{ opacity: [1, 0.6, 1] }} transition={{ repeat: Infinity, duration: 0.8 }}
           style={{
-            padding: '2px 8px', borderRadius: 3,
-            background: '#1e1407', border: '1px solid #eab308',
-            color: '#fde68a', fontSize: 9, fontWeight: 700,
-          }}
-        >
-          ⏳ {pendingDecisions} AWAITING APPROVAL
+            padding: '4px 10px', borderRadius: 20,
+            background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.3)',
+            fontSize: 11, fontWeight: 600, color: '#ca8a04',
+          }}>
+          ⏳ {pendingDecisions} Awaiting Approval
         </motion.div>
       )}
 
       <div style={{ flex: 1 }} />
 
-      {/* Auto-executed count */}
-      {autoExecuted > 0 && (
-        <div style={{ fontSize: 9, color: '#22c55e33', letterSpacing: 1 }}>
-          {autoExecuted} AUTO-EXEC
-        </div>
-      )}
+      {/* Scenario controls */}
+      <button onClick={() => handleScenario('normal')} style={{
+        padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 500,
+        background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)',
+        color: '#64748b', backdropFilter: 'blur(10px)',
+      }}>Normal Day</button>
 
-      {/* Scenario buttons */}
-      <button
-        onClick={() => handleScenario('normal')}
-        style={{
-          padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 9,
-          background: !isFlood ? '#0c1f3a' : '#0f172a',
-          border: `1px solid ${!isFlood ? '#3b82f6' : '#1e293b'}`,
-          color: !isFlood ? '#93c5fd' : '#334155',
-          fontFamily: 'monospace', fontWeight: 700, letterSpacing: 1,
-        }}
-      >
-        NORMAL DAY
-      </button>
+      <button onClick={() => handleScenario('flood_sept2024')} style={{
+        padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+        background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)',
+        color: '#2563eb', backdropFilter: 'blur(10px)',
+      }}>🌊 Flood Scenario</button>
 
-      {/* Rules vs NEXUS toggle */}
-      <button
-        onClick={handleRulesToggle}
-        title={rulesMode ? 'Switch back to NEXUS multi-agent' : 'Show what a rules engine would do'}
-        style={{
-          padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 9,
-          background: rulesMode ? '#1a0505' : '#0f172a',
-          border: `1px solid ${rulesMode ? '#ef4444' : '#1e293b'}`,
-          color: rulesMode ? '#fca5a5' : '#475569',
-          fontFamily: 'monospace', fontWeight: 700, letterSpacing: 1,
-        }}
-      >
-        {rulesMode ? '⚠ RULES ENGINE' : '⚖ NEXUS AI'}
-      </button>
+      <a href="http://localhost:8001" target="_blank" rel="noopener noreferrer" style={{
+        padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, textDecoration: 'none',
+        background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#16a34a',
+      }}>📹 Rakshak ↗</a>
 
-      {/* Rules Engine deadlock badge (shown when in rules mode and deadlocked) */}
-      {rulesMode && rulesEngineResult && !rulesEngineResult.resolved && (
-        <motion.div
-          animate={{ opacity: [1, 0.5, 1] }}
-          transition={{ repeat: Infinity, duration: 0.9 }}
-          style={{
-            padding: '2px 8px', borderRadius: 3,
-            background: '#7f1d1d', border: '1px solid #ef4444',
-            color: '#fca5a5', fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-          }}
-        >
-          {rulesEngineResult.status}
-        </motion.div>
-      )}
-
-      {/* Red Team button */}
-      <motion.button
-        onClick={handleRedTeam}
-        disabled={redTeamLoading}
-        animate={redTeamFired ? { scale: [1, 1.06, 1] } : {}}
-        transition={{ duration: 0.3 }}
-        style={{
-          padding: '3px 12px', borderRadius: 3, cursor: redTeamLoading ? 'wait' : 'pointer',
-          fontSize: 9, fontFamily: 'monospace', fontWeight: 900, letterSpacing: 1,
-          background: redTeamFired ? '#7f1d1d' : '#1a0505',
-          border: `1px solid ${redTeamFired ? '#ef4444' : '#7f1d1d'}`,
-          color: redTeamFired ? '#ffffff' : '#ef4444',
-          boxShadow: redTeamFired ? '0 0 8px #ef444488' : 'none',
-          transition: 'all 0.2s',
-        }}
-      >
-        {redTeamLoading ? '⚡ INJECTING...' : redTeamFired ? '🔴 RED TEAM ACTIVE' : '☢ RED TEAM'}
-      </motion.button>
-
-      {/* Rakshak link */}
-      <a
-        href="http://localhost:8001"
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          padding: '2px 8px', borderRadius: 3, textDecoration: 'none',
-          background: '#0c1a0c', border: '1px solid #16a34a',
-          color: '#86efac', fontSize: 8, fontWeight: 700, letterSpacing: 1,
-        }}
-      >
-        📹 RAKSHAK ↗
-      </a>
-
-      {/* Clock */}
-      <div style={{ color: '#334155', fontSize: 11, letterSpacing: 1, minWidth: 60, textAlign: 'right' }}>
-        {clock}
-      </div>
+      <Clock />
     </div>
   )
 }

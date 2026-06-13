@@ -194,12 +194,7 @@ class RakshakAdapter:
         if self._on_incident:
             await self._on_incident(incident)
 
-        # Dispatch emergency alerts for high/critical incidents
-        if incident.severity in ("high", "critical"):
-            try:
-                await dispatch_alerts(incident_dict)
-            except Exception as e:
-                print(f"[Rakshak] Alert dispatch failed: {e}")
+        # Alerts are dispatched by Rakshak server directly — do not duplicate here
 
     def _parse_raw(self, raw: dict) -> Optional[RakshakIncident]:
         """Parse a live Rakshak API response into a RakshakIncident."""

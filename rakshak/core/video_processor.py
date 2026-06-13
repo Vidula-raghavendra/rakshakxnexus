@@ -16,8 +16,8 @@ import numpy as np
 from ultralytics import YOLO
 from .incident_classifier import IncidentClassifier, IncidentResult
 
-MODEL_PATH = Path(__file__).parent.parent / "models" / "yolov8n.pt"
-# Ultralytics downloads yolov8n.pt automatically if not found at this path
+MODEL_PATH = Path(__file__).parent.parent / "models" / "yolov8n_v2.pt"
+# yolov8n_v2.pt is the fresh download compatible with PyTorch 2.6+ (weights_only=True)
 
 
 class Detection:
@@ -101,19 +101,13 @@ class VideoProcessor:
     def _load_model(self) -> YOLO:
         if self._model is None:
             print(f"[Rakshak/{self.camera_id}] Loading YOLOv8n...")
-            MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-            # Use local path if it exists, otherwise let ultralytics download to its cache
-            model_arg = str(MODEL_PATH) if MODEL_PATH.exists() else "yolov8n.pt"
-            self._model = YOLO(model_arg)
-            # Cache a copy in our models dir for future runs
             if not MODEL_PATH.exists():
-                try:
-                    import shutil as _shutil
-                    src = self._model.ckpt_path
-                    if src and Path(src).exists():
-                        _shutil.copy2(src, MODEL_PATH)
-                except Exception:
-                    pass
+                raise RuntimeError(
+                    f"Model not found at {MODEL_PATH}. "
+                    "Run: python -c \"from ultralytics import YOLO; YOLO('yolov8n.pt')\" "
+                    "then copy the downloaded file to rakshak/models/yolov8n_v2.pt"
+                )
+            self._model = YOLO(str(MODEL_PATH))
             print(f"[Rakshak/{self.camera_id}] Model ready")
         return self._model
 
@@ -141,22 +135,33 @@ class VideoProcessor:
                 skip = max(1, int(fps / 5))  # process ~5 fps
                 local_count = 0
 
+                # Loop short videos so the feed stays alive for demos
+                duration_s = (cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps) if fps else 999
+                should_loop = isinstance(self.video_source, str) and duration_s < 20
+
                 while self._running:
                     ret, frame = cap.read()
                     if not ret:
-                        # Video ended — stop, do not loop
+                        if should_loop:
+                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            local_count = 0
+                            continue
                         print(f"[Rakshak/{self.camera_id}] Video ended, stopping inference")
                         self._running = False
                         break
 
                     local_count += 1
+
+                    # Write every frame as-is first so the feed is always visible
+                    small = cv2.resize(frame, (640, 480))
+                    cv2.imwrite(str(self._frame_dir / "latest.jpg"), small)
+
                     if local_count % skip != 0:
                         continue
 
-                    small = cv2.resize(frame, (640, 480))
                     results = model(small, verbose=False, conf=0.25)[0]
 
-                    # Write frame immediately — this is the live feed
+                    # Overwrite with annotated version
                     annotated = results.plot()
                     cv2.imwrite(str(self._frame_dir / "latest.jpg"), annotated)
 
@@ -168,11 +173,7 @@ class VideoProcessor:
             finally:
                 if cap is not None:
                     cap.release()
-                # Delete latest.jpg so the UI shows "No Signal" after stop
-                try:
-                    (self._frame_dir / "latest.jpg").unlink(missing_ok=True)
-                except Exception:
-                    pass
+                # Keep latest.jpg — UI shows last frame instead of "No Signal"
 
         # Start inference thread
         import threading

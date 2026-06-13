@@ -26,6 +26,14 @@ rakshak/uploads/
 rakshak/frames/
 backend/uploads/
 *.log
+.run_logs/
+
+# Test / scratch videos at root
+*.mp4
+test_videos/thumbs/
+
+# Stray test files
+test_*.py
 
 # Node / frontend
 node_modules/

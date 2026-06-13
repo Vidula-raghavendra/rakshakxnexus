@@ -63,18 +63,38 @@ INCIDENT_ROUTING: dict[str, list[str]] = {
 
 _last_alert: dict[str, float] = {}  # key: "incident_type:department"
 ALERT_COOLDOWN = 3600  # 1 hour per incident-type per department
-MAX_CALLS_PER_SESSION = 3  # hard cap on total calls per server run
-_total_calls_made = 0
+MAX_CALLS_PER_SESSION = 1  # one call per upload session
+_session_calls_made = 0     # resets when a new video is uploaded
+_session_active = False     # True between upload and stop-all
 
 
 def _cooldown_key(incident_type: str, dept: str) -> str:
     return f"{incident_type}:{dept}"
 
 
+def reset_session_alerts():
+    """Call when a new video upload starts — allows exactly one call for the new session."""
+    global _session_calls_made, _session_active, _last_alert
+    _session_calls_made = 0
+    _session_active = True
+    _last_alert.clear()
+    logger.info("Alert session reset — one call allowed for new upload")
+
+
+def end_session_alerts():
+    """Call when stop-all is triggered — blocks further calls until next upload."""
+    global _session_active
+    _session_active = False
+    logger.info("Alert session ended — calls suppressed until next upload")
+
+
 def _is_on_cooldown(incident_type: str, dept: str) -> bool:
-    global _total_calls_made
-    if _total_calls_made >= MAX_CALLS_PER_SESSION:
-        logger.info(f"Global call cap ({MAX_CALLS_PER_SESSION}) reached — suppressing all alerts")
+    global _session_calls_made
+    if not _session_active:
+        logger.info("No active session — suppressing alert")
+        return True
+    if _session_calls_made >= MAX_CALLS_PER_SESSION:
+        logger.info(f"Session call cap ({MAX_CALLS_PER_SESSION}) reached — suppressing alert")
         return True
     key = _cooldown_key(incident_type, dept)
     last = _last_alert.get(key, 0.0)
@@ -82,9 +102,9 @@ def _is_on_cooldown(incident_type: str, dept: str) -> bool:
 
 
 def _mark_sent(incident_type: str, dept: str):
-    global _total_calls_made
+    global _session_calls_made
     _last_alert[_cooldown_key(incident_type, dept)] = time.time()
-    _total_calls_made += 1
+    _session_calls_made += 1
 
 
 # ── Twilio client (lazy init) ─────────────────────────────────────────────────
@@ -232,7 +252,9 @@ def _build_action_twiml(decision: dict, dept_name: str) -> str:
 </Response>"""
 
 
-async def dispatch_action_alerts(decision: dict) -> list[dict]:
+async def dispatch_action_alerts(decision: dict) -> list[dict]:  # type: ignore[return]
+    return []  # DISABLED
+    # noinspection PyUnreachableCode
     """
     Called when the governor commits to an action.
     Calls + SMSes the relevant departments telling them WHAT the AI decided.
@@ -311,7 +333,9 @@ def _send_call_sync(to: str, twiml: str):
 
 # ── Public async interface ────────────────────────────────────────────────────
 
-async def dispatch_alerts(incident: dict) -> list[dict]:
+async def dispatch_alerts(incident: dict) -> list[dict]:  # type: ignore[return]
+    return []  # DISABLED — re-enable by removing these two lines
+    # noinspection PyUnreachableCode
     """
     Send calls + SMS to all relevant departments for this incident.
     Returns list of alert records (for logging/broadcast).

@@ -42,7 +42,7 @@ FLOOD_SCENARIO_RAINFALL = [
 class SimulationEngine:
     def __init__(self):
         self.state = CityState()
-        self.tick_interval = 2.0  # seconds per tick (fast for demo)
+        self.tick_interval = 5.0  # seconds per tick
         self._running = False
         self._on_tick: Optional[Callable[[CityState], Awaitable[None]]] = None
         self._scenario_tick = 0

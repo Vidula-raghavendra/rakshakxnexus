@@ -8,6 +8,9 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8000',
       '/ws': { target: 'ws://localhost:8000', ws: true },
+      '/frames': 'http://localhost:8001',
+      '/cameras': 'http://localhost:8001',
+      '/stream': { target: 'ws://localhost:8001', ws: true },
     }
   }
 })

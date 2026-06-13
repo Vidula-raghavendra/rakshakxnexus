@@ -1,107 +1,78 @@
-# NEXUS — AI City Governor
+# Rakshak — AI-Powered CCTV City Intelligence
 
-Autonomous AI governor for Hyderabad. Real-time digital twin + Gemini-powered decision engine.
-
-## Quick Start
-
-### 1. Environment
-```bash
-cd backend
-cp .env.example .env
-# Add your GEMINI_API_KEY to .env
-```
-
-### 2. Backend
-```bash
-cd backend
-pip install -r requirements.txt
-cd ..
-python -m uvicorn backend.main:app --reload --port 8000
-```
-
-First run fetches Hyderabad OSM data (~30s). Cached after that.
-
-### 3. Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:3000
-
-### Windows one-click
-```
-start.bat
-```
+Real-time CCTV incident detection and autonomous city command system for Hyderabad.  
+YOLOv8 computer vision · FastAPI · React · Twilio alerts · Glassmorphism UI
 
 ---
 
-## Demo Flow
+## Requirements
 
-1. Open http://localhost:3000 — city appears in normal ops mode
-2. Click **SEPT 2024 FLOOD** button in the top bar
-3. Watch:
-   - Zones shift from green → yellow → orange → red
-   - Rakshak CCTV incidents appear on the map (📹 markers)
-   - AI Governor decisions stream on the right panel
-   - Cascade failures propagate in the bottom graph
-   - Resources move toward crisis zones
-4. Approve or reject critical decisions (backup power, evacuations) in the feed
-5. Click **NORMAL DAY** to reset
+- Python 3.10+  →  https://python.org
+- Node.js 18+   →  https://nodejs.org
+- Git
 
 ---
 
-## Architecture
+## Running on any laptop
+
+**Just double-click `start.bat`.**
+
+It will:
+1. Create a Python virtual environment (`.venv`) if one doesn't exist
+2. Install all Python and npm dependencies automatically
+3. Start all three services in separate terminal windows
+
+| Service | URL |
+|---|---|
+| Dashboard (React) | http://localhost:3000 |
+| Rakshak CCTV feed | http://localhost:8001 |
+| NEXUS API docs | http://localhost:8000/docs |
+
+To stop: close the three terminal windows.
+
+---
+
+## Environment variables
+
+Create `backend/.env.local` with:
 
 ```
-Rakshak (CCTV ML) ──► RakshakAdapter ──┐
-                                        ▼
-OSM Data ──► CityGraph ──► SimulationEngine ──► CityState
-                                        │
-                                        ▼
-                               AIGovernor (Gemini 1.5 Pro)
-                                        │
-                            ┌───────────┴────────────┐
-                            ▼                        ▼
-                      Auto-execute             Pending approval
-                      (conf ≥ 0.85)           (critical / low conf)
-                            │
-                            ▼
-                    FastAPI WebSocket ──► React UI
+GEMINI_API_KEY=your_key_here
+TWILIO_ACCOUNT_SID=your_sid_here
+TWILIO_AUTH_TOKEN=your_token_here
+NEXUS_API_KEY=rakshak_2026_a9XkP7mN4vQ2sL8dF5wR1zC6
 ```
 
-## Rakshak Integration
+Without these the system runs fine in rules-based fallback mode (no LLM, no calls).
 
-**Mode: replay (default)**  
-Replays recorded Sept 2024 Mehdipatnam incident sequence. Incidents fire at real
-relative timestamps from that night.
+---
 
-**Mode: live**  
-Set `RAKSHAK_MODE=live` and `RAKSHAK_API_URL=http://your-rakshak-host/detections`
-in `.env`. Expects Rakshak to emit JSON:
-```json
-{
-  "detections": [{
-    "incident_type": "road_flood",
-    "lat": 17.3957, "lng": 78.4290,
-    "confidence": 0.94,
-    "camera_id": "cam_meh_001",
-    "severity": "critical",
-    "description": "Water rising at underpass",
-    "zone_id": "mehdipatnam_up",
-    "timestamp": 1725000000.0
-  }]
-}
+## Using the demo
+
+1. Open http://localhost:8001 (Rakshak CCTV)
+2. Select a camera slot and upload a video from `test_videos/`
+3. Watch detections appear on the city map at http://localhost:3000
+4. Click **Analyse incident** on any detection card to see the agent deliberate
+5. Click **✓ Resolved** to dismiss
+
+---
+
+## Project structure
+
 ```
-
-## External Data Required
-
-| Source | How | Size |
-|--------|-----|------|
-| Hyderabad road network | `osmnx` fetches from OpenStreetMap API on first run | ~50MB cached |
-| Sept 2024 rainfall readings | Embedded in `simulation/engine.py` (from IMD records) | ~2KB |
-| Infrastructure positions | Hardcoded from GHMC public data | — |
-| Gemini API | `GEMINI_API_KEY` env var | — |
-
-No datasets to download manually.
+nexus/
+├── backend/          FastAPI city governor (port 8000)
+│   ├── api/          REST + WebSocket endpoints
+│   ├── governor/     AI decision engine (Gemini / rules fallback)
+│   ├── simulation/   City digital twin
+│   └── alerts/       Twilio call/SMS dispatcher
+├── rakshak/          CCTV inference server (port 8001)
+│   ├── api/          Upload, stream, frame endpoints
+│   ├── core/         YOLOv8 video processor + classifier
+│   └── models/       yolov8n.pt (downloaded on first run)
+├── frontend/         React dashboard (port 3000)
+│   └── src/
+│       └── components/  CityMap, CctvPanel, DecisionFeed, etc.
+├── test_videos/      Sample incident videos for demo
+└── start.bat         One-click launcher
+```
