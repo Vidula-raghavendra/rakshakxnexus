@@ -2,6 +2,7 @@
 .env
 .env.*
 .env.local
+!.env.example
 backend/.env.local
 rakshak/.env.local
 
@@ -30,6 +31,7 @@ backend/uploads/
 
 # Test / scratch videos at root
 *.mp4
+!test_videos/*.mp4
 test_videos/thumbs/
 
 # Stray test files
@@ -48,3 +50,9 @@ Thumbs.db
 # IDE
 .vscode/settings.json
 .idea/
+
+# AI-assistant config (kept local)
+.claude/
+.agents/
+skills-lock.json
+.mcp.json
