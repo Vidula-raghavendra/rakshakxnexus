@@ -3,7 +3,7 @@ import { useCityStore } from '../store/cityStore'
 import { motion } from 'framer-motion'
 
 const API_KEY = import.meta.env.VITE_API_KEY ?? ''
-const RAKSHAK_KEY = 'rakshak_2026_a9XkP7mN4vQ2sL8dF5wR1zC6'
+const RAKSHAK_KEY = API_KEY  // same NEXUS_API_KEY, read from frontend/.env.local
 
 function useMuteState() {
   const [muted, setMuted] = useState(false)
